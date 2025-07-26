@@ -1,0 +1,102 @@
+# Cube Grasping Task Configuration
+
+# Dataset Configuration
+dataset_root: "/home/ubuntu/dataset/lerobot_dataset/crane_plus_pekori"
+repo_id: "crane_plus_pekori"
+config_path: "configs/crane_features.py"
+
+# Model Configuration
+model_config:
+  policy_type: "standard" # "standard" or "curriculum"
+  state_dim: 5
+  action_dim: 5
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.1
+  use_grasp_attention: true
+  use_phase_detection: true
+
+# Training Configuration
+training_steps: 2000
+batch_size: 8
+chunk_size: 16
+n_action_steps: 1
+learning_rate: 0.0001
+weight_decay: 0.00001
+min_lr: 0.000001
+max_grad_norm: 1.0
+
+# Data Augmentation Configuration
+augmentation_config:
+  noise_std: 0.01
+  time_warp_factor: 0.1
+  action_noise_std: 0.005
+  joint_limit_buffer: 0.05
+  enable_augmentation: true
+  augmentation_factor: 3
+
+# Curriculum Learning Configuration
+curriculum_config:
+  curriculum_steps:
+    - [100, 0.1] # step, weight
+    - [500, 0.5]
+    - [1000, 1.0]
+
+# Hardware Configuration
+device: "cuda" # "cuda" or "cpu"
+num_workers: 4
+
+# Logging Configuration
+log_freq: 10
+save_freq: 100
+use_wandb: true
+wandb_project: "cube-grasp"
+experiment_name: "cube-grasp-enhanced"
+
+# Output Configuration
+output_directory: "/home/ubuntu/checkpoints/train/cube_grasp_enhanced"
+
+# Delta Timestamps for Multi-Step Prediction
+delta_timestamps:
+  observation.environment_state: [0.0]
+  observation.state: [0.0]
+  action:
+    [
+      -0.1,
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2,
+      1.3,
+      1.4,
+    ]
+
+# Joint Limits for Crane Plus Robot
+joint_limits:
+  joint1: [-3.14159, 3.14159] # -π to π
+  joint2: [-1.5708, 1.5708] # -π/2 to π/2
+  joint3: [-3.14159, 3.14159] # -π to π
+  joint4: [-1.5708, 1.5708] # -π/2 to π/2
+  gripper: [0.0, 1.0] # 0 to 1
+
+# Grasp Phase Configuration
+grasp_phases:
+  - "pre_grasp"
+  - "grasp"
+  - "post_grasp"
+  - "other"
+
+# Evaluation Configuration
+eval_config:
+  eval_freq: 100
+  num_eval_episodes: 10
+  success_threshold: 0.8

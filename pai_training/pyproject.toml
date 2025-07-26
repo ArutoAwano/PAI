@@ -27,6 +27,10 @@ pai_training = { path = ".", editable = true }
 lerobot = { path = "lerobot", editable = true, extras = ["pi0", "test", "pusht"] }
 draccus = "==0.10.0"
 pymunk = "==6.6.0"
+torch = ">=2.0.0"
+scipy = ">=1.10.0"
+wandb = ">=0.15.0"
+tqdm = ">=4.65.0"
 
 [tool.pixi.activation.env]
 LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
@@ -34,7 +38,10 @@ PYTHONNOUSERSITE = "1"
 
 [tool.pixi.tasks]
 convert = { cmd = "python scripts/rosbag2lerobot.py" }
+convert-augmented = { cmd = "python scripts/rosbag2lerobot_with_augmentation.py", description = "Convert ros2bag to lerobot format with data augmentation" }
 train = { cmd = "python scripts/train.py" }
+train-cube-grasp = { cmd = "python scripts/train_cube_grasp.py", description = "Train enhanced cube grasping policy with curriculum learning" }
 debug-policy = { cmd = "python scripts/debug_policy.py" }
 infer = { cmd = "python scripts/infer.py" }
+infer-cube-grasp = { cmd = "python scripts/infer_cube_grasp.py", description = "Inference with enhanced cube grasping policy" }
 
