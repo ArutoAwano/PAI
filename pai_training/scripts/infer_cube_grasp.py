@@ -174,7 +174,8 @@ class CubeGraspInferenceNode(Node):
                     phase_probs = phase_probs.cpu().numpy().astype(np.float32)
                     # デバッグ用：フェーズ確率の形状をログ出力
                     if not hasattr(self, '_phase_shape_logged'):
-                        self.get_logger().info(f"Phase probs shape: {phase_probs.shape}, values: {phase_probs.flatten()[:4]}")
+                        self.get_logger().info(f"Phase probs shape: {phase_probs.shape}, values: {phase_probs.flatten()[:4]}, dtype: {phase_probs.dtype}")
+                        self.get_logger().info(f"Phase probs full: {phase_probs}")
                         self._phase_shape_logged = True
                 
                 self.last_action = action
@@ -237,31 +238,44 @@ class CubeGraspInferenceNode(Node):
                 phase_probs_float = phase_probs.astype(np.float32)
                 
                 # フェーズ確率の形状を確認して適切に処理
-                if phase_probs_float.ndim == 1:
+                if phase_probs_float.ndim == 0:
+                    # スカラー値の場合
+                    max_phase_prob = float(phase_probs_float)
+                    max_phase_idx = 0
+                elif phase_probs_float.ndim == 1:
                     # 1次元の場合（単一のフェーズ確率）
                     if len(phase_probs_float) == 1:
-                        # スカラー値の場合
+                        # 長さ1の配列
                         max_phase_prob = float(phase_probs_float[0])
                         max_phase_idx = 0
                     else:
                         # 複数のフェーズ確率
-                        max_phase_idx = np.argmax(phase_probs_float)
-                        max_phase_prob = float(phase_probs_float[max_phase_idx])
+                        # 安全なargmax処理
+                        max_val = float(phase_probs_float.max())
+                        max_indices = np.where(phase_probs_float == max_val)[0]
+                        max_phase_idx = int(max_indices[0])
+                        max_phase_prob = max_val
                 elif phase_probs_float.ndim == 2:
                     # 2次元の場合（時系列のフェーズ確率）
                     if phase_probs_float.shape[0] == 1:
                         # 単一のタイムステップ
-                        max_phase_idx = np.argmax(phase_probs_float[0])
-                        max_phase_prob = float(phase_probs_float[0][max_phase_idx])
+                        max_val = float(phase_probs_float[0].max())
+                        max_indices = np.where(phase_probs_float[0] == max_val)[0]
+                        max_phase_idx = int(max_indices[0])
+                        max_phase_prob = max_val
                     else:
                         # 複数のタイムステップ
-                        max_phase_idx = np.argmax(phase_probs_float[-1])
-                        max_phase_prob = float(phase_probs_float[-1][max_phase_idx])
+                        max_val = float(phase_probs_float[-1].max())
+                        max_indices = np.where(phase_probs_float[-1] == max_val)[0]
+                        max_phase_idx = int(max_indices[0])
+                        max_phase_prob = max_val
                 else:
                     # その他の形状の場合は平均を取る
                     mean_probs = phase_probs_float.mean(axis=0) if phase_probs_float.ndim > 1 else phase_probs_float
-                    max_phase_idx = np.argmax(mean_probs)
-                    max_phase_prob = float(mean_probs[max_phase_idx])
+                    max_val = float(mean_probs.max())
+                    max_indices = np.where(mean_probs == max_val)[0]
+                    max_phase_idx = int(max_indices[0])
+                    max_phase_prob = max_val
                 
                 # インデックスが範囲内かチェック
                 if max_phase_idx < len(phase_names):
