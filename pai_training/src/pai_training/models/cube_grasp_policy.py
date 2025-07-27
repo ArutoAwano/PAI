@@ -93,7 +93,7 @@ class CubeGraspPolicy(nn.Module):
         self.gripper_encoder = nn.Sequential(
             nn.Linear(1, hidden_dim // 4),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 4, hidden_dim // 2)
+            nn.Linear(hidden_dim // 4, hidden_dim)  # hidden_dimに合わせる
         )
         
         # 時系列処理用のLSTM
