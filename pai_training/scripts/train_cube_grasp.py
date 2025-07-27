@@ -29,7 +29,15 @@ class CubeGraspTrainer:
     
     def __init__(self, config: Dict):
         self.config = config
-        self.device = torch.device(config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+        # デバイス設定の修正
+        device_config = config.get('device', 'auto')
+        if device_config == 'auto':
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        elif device_config == 'cuda' and not torch.cuda.is_available():
+            print("Warning: CUDA requested but not available. Falling back to CPU.")
+            self.device = torch.device('cpu')
+        else:
+            self.device = torch.device(device_config)
         
         # データセットの読み込み
         delta_timestamps = config.get('delta_timestamps', {
@@ -325,6 +333,9 @@ def main():
         config['output_directory'] = args.output_dir
     if args.device:
         config['device'] = args.device
+    else:
+        # デフォルトでCPUを使用
+        config['device'] = 'cpu'
     
     # モデル設定の追加
     config['model_config'] = {

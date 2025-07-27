@@ -43,7 +43,7 @@ curriculum_config:
     - [1000, 1.0]
 
 # Hardware Configuration
-device: "cuda" # "cuda" or "cpu"
+device: "cpu" # "cuda", "cpu", or "auto"
 num_workers: 4
 
 # Logging Configuration
