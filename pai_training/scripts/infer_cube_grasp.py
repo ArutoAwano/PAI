@@ -145,44 +145,69 @@ class CubeGraspInferenceNode(Node):
         if self.latest_joint_state is None:
             return
         
-        # 観測データの準備
-        obs = self.get_observation_tensor()
-        if obs is None:
-            return
+        # 元のinfer.pyと同じ観測データの準備
+        obs = {
+            'observation.state': torch.tensor(self.latest_joint_state, dtype=torch.float32).unsqueeze(0),  # (1, 5)
+            'observation.environment_state': torch.tensor(self.latest_joint_state, dtype=torch.float32).unsqueeze(0),  # (1, 5)
+        }
         
         # 推論実行
         with torch.no_grad():
             try:
-                # モデルの順伝播
+                # モデルの順伝播（元のinfer.pyと同じ方法）
                 output = self.policy(obs['observation.state'].to(self.device), return_uncertainty=True)
+                action = output['action'].cpu().numpy().flatten().astype(np.float32)  # (5,)
                 
                 # デバッグ用：出力構造を確認
                 if hasattr(self, '_debug_output') and not self._debug_output:
                     self.get_logger().info(f"Model output keys: {list(output.keys())}")
                     self._debug_output = True
                 
-                action = output['action'].cpu().numpy().flatten().astype(np.float32)  # (5,)
-                
-                # 不確実性の取得（デバッグ用）
-                uncertainty = output.get('uncertainty', None)
-                if uncertainty is not None:
-                    uncertainty = uncertainty.cpu().numpy().flatten().astype(np.float32)
-                
-                # フェーズ情報の取得（デバッグ用）
-                phase_probs = output.get('phase_probs', None)
-                if phase_probs is not None:
-                    phase_probs = phase_probs.cpu().numpy().astype(np.float32)
-                    # デバッグ用：フェーズ確率の形状をログ出力
-                    if not hasattr(self, '_phase_shape_logged'):
-                        self.get_logger().info(f"Phase probs shape: {phase_probs.shape}, values: {phase_probs.flatten()[:4]}, dtype: {phase_probs.dtype}")
-                        self.get_logger().info(f"Phase probs full: {phase_probs}")
-                        self._phase_shape_logged = True
+                # 不確実性とフェーズ情報の取得（オプション）
+                uncertainty = None
+                phase_probs = None
+                try:
+                    # 不確実性の取得
+                    uncertainty = output.get('uncertainty', None)
+                    if uncertainty is not None:
+                        uncertainty = uncertainty.cpu().numpy().flatten().astype(np.float32)
+                    
+                    # フェーズ情報の取得
+                    phase_probs = output.get('phase_probs', None)
+                    if phase_probs is not None:
+                        phase_probs = phase_probs.cpu().numpy().astype(np.float32)
+                        # 推論時は最新のタイムステップのみを使用
+                        if phase_probs.ndim == 3:  # (batch_size, seq_len, num_phases)
+                            phase_probs = phase_probs[0, -1, :]  # (num_phases,)
+                        elif phase_probs.ndim == 2:  # (seq_len, num_phases)
+                            phase_probs = phase_probs[-1, :]  # (num_phases,)
+                        # デバッグ用：フェーズ確率の形状をログ出力
+                        if not hasattr(self, '_phase_shape_logged'):
+                            self.get_logger().info(f"Phase probs shape: {phase_probs.shape}, values: {phase_probs}")
+                            self._phase_shape_logged = True
+                except Exception as e:
+                    self.get_logger().warn(f"Could not get uncertainty/phase info: {e}")
                 
                 self.last_action = action
                 
-                # アクションの公開
-                self.publish_arm_action(action[:4])
-                self.publish_gripper_action(action[4])
+                # アクションの公開（元のinfer.pyと同じ方法）
+                jt = JointTrajectory()
+                jt.joint_names = ARM_JOINT_NAMES
+                pt = JointTrajectoryPoint()
+                pt.positions = action[:4].tolist()
+                pt.time_from_start.sec = 0
+                pt.time_from_start.nanosec = int(0.1 * 1e9)
+                jt.points.append(pt)
+                self.arm_pub.publish(jt)
+                
+                jt_g = JointTrajectory()
+                jt_g.joint_names = [GRIPPER_JOINT_NAME]
+                pt_g = JointTrajectoryPoint()
+                pt_g.positions = [float(action[4])]
+                pt_g.time_from_start.sec = 0
+                pt_g.time_from_start.nanosec = int(0.1 * 1e9)
+                jt_g.points.append(pt_g)
+                self.gripper_pub.publish(jt_g)
                 
                 # デバッグ情報の出力
                 self.log_action(action, uncertainty, phase_probs)
@@ -193,8 +218,24 @@ class CubeGraspInferenceNode(Node):
                 self.get_logger().error(f"Traceback: {traceback.format_exc()}")
                 # エラー時は前回のアクションを使用
                 if self.last_action is not None:
-                    self.publish_arm_action(self.last_action[:4])
-                    self.publish_gripper_action(self.last_action[4])
+                    # 元のinfer.pyと同じ方法でアクションを公開
+                    jt = JointTrajectory()
+                    jt.joint_names = ARM_JOINT_NAMES
+                    pt = JointTrajectoryPoint()
+                    pt.positions = self.last_action[:4].tolist()
+                    pt.time_from_start.sec = 0
+                    pt.time_from_start.nanosec = int(0.1 * 1e9)
+                    jt.points.append(pt)
+                    self.arm_pub.publish(jt)
+                    
+                    jt_g = JointTrajectory()
+                    jt_g.joint_names = [GRIPPER_JOINT_NAME]
+                    pt_g = JointTrajectoryPoint()
+                    pt_g.positions = [float(self.last_action[4])]
+                    pt_g.time_from_start.sec = 0
+                    pt_g.time_from_start.nanosec = int(0.1 * 1e9)
+                    jt_g.points.append(pt_g)
+                    self.gripper_pub.publish(jt_g)
     
     def publish_arm_action(self, arm_action: np.ndarray):
         """アームアクションの公開"""
