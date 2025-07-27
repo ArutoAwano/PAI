@@ -40,6 +40,7 @@ class CubeGraspInferenceNode(Node):
         self.joint_history = []  # 時系列データ用
         self.max_history_length = 32  # 履歴の最大長
         self._debug_output = False  # デバッグ出力フラグ
+        self._phase_shape_logged = False  # フェーズ形状ログフラグ
         
         # タイマー設定（20Hz）
         self.timer = self.create_timer(0.05, self.publish_action)
@@ -172,7 +173,9 @@ class CubeGraspInferenceNode(Node):
                 if phase_probs is not None:
                     phase_probs = phase_probs.cpu().numpy().astype(np.float32)
                     # デバッグ用：フェーズ確率の形状をログ出力
-                    self.get_logger().debug(f"Phase probs shape: {phase_probs.shape}")
+                    if not hasattr(self, '_phase_shape_logged'):
+                        self.get_logger().info(f"Phase probs shape: {phase_probs.shape}, values: {phase_probs.flatten()[:4]}")
+                        self._phase_shape_logged = True
                 
                 self.last_action = action
                 
@@ -236,16 +239,29 @@ class CubeGraspInferenceNode(Node):
                 # フェーズ確率の形状を確認して適切に処理
                 if phase_probs_float.ndim == 1:
                     # 1次元の場合（単一のフェーズ確率）
-                    max_phase_idx = np.argmax(phase_probs_float)
-                    max_phase_prob = float(phase_probs_float[max_phase_idx])
+                    if len(phase_probs_float) == 1:
+                        # スカラー値の場合
+                        max_phase_prob = float(phase_probs_float[0])
+                        max_phase_idx = 0
+                    else:
+                        # 複数のフェーズ確率
+                        max_phase_idx = np.argmax(phase_probs_float)
+                        max_phase_prob = float(phase_probs_float[max_phase_idx])
                 elif phase_probs_float.ndim == 2:
                     # 2次元の場合（時系列のフェーズ確率）
-                    max_phase_idx = np.argmax(phase_probs_float[-1])  # 最新のタイムステップ
-                    max_phase_prob = float(phase_probs_float[-1][max_phase_idx])
+                    if phase_probs_float.shape[0] == 1:
+                        # 単一のタイムステップ
+                        max_phase_idx = np.argmax(phase_probs_float[0])
+                        max_phase_prob = float(phase_probs_float[0][max_phase_idx])
+                    else:
+                        # 複数のタイムステップ
+                        max_phase_idx = np.argmax(phase_probs_float[-1])
+                        max_phase_prob = float(phase_probs_float[-1][max_phase_idx])
                 else:
                     # その他の形状の場合は平均を取る
-                    max_phase_idx = np.argmax(phase_probs_float.mean(axis=0))
-                    max_phase_prob = float(phase_probs_float.mean(axis=0)[max_phase_idx])
+                    mean_probs = phase_probs_float.mean(axis=0) if phase_probs_float.ndim > 1 else phase_probs_float
+                    max_phase_idx = np.argmax(mean_probs)
+                    max_phase_prob = float(mean_probs[max_phase_idx])
                 
                 # インデックスが範囲内かチェック
                 if max_phase_idx < len(phase_names):
@@ -280,6 +296,7 @@ def main():
     # ROS2ノードの初期化
     rclpy.init()
     
+    node = None
     try:
         # 推論ノードの作成
         node = CubeGraspInferenceNode(args.model_path, args.config_path)
@@ -303,9 +320,16 @@ def main():
         print(f"Error during inference: {e}")
     finally:
         # クリーンアップ
-        if 'node' in locals():
-            node.destroy_node()
-        rclpy.shutdown()
+        try:
+            if node is not None:
+                node.destroy_node()
+        except Exception as e:
+            print(f"Error destroying node: {e}")
+        
+        try:
+            rclpy.shutdown()
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
 
 if __name__ == '__main__':
     main() 
