@@ -91,18 +91,24 @@ class CubeGraspInferenceNode(Node):
     
     def joint_state_callback(self, msg):
         """関節状態のコールバック"""
-        # 関節位置の抽出
-        name_to_pos = dict(zip(msg.name, msg.position))
-        arm_pos = [name_to_pos.get(j, 0.0) for j in ARM_JOINT_NAMES]
-        gripper_pos = name_to_pos.get(GRIPPER_JOINT_NAME, 0.0)
-        current_state = np.array(arm_pos + [gripper_pos], dtype=np.float32)
-        
-        self.latest_joint_state = current_state
-        
-        # 履歴の更新
-        self.joint_history.append(current_state)
-        if len(self.joint_history) > self.max_history_length:
-            self.joint_history.pop(0)
+        try:
+            # 関節位置の抽出
+            name_to_pos = dict(zip(msg.name, msg.position))
+            arm_pos = [float(name_to_pos.get(j, 0.0)) for j in ARM_JOINT_NAMES]
+            gripper_pos = float(name_to_pos.get(GRIPPER_JOINT_NAME, 0.0))
+            current_state = np.array(arm_pos + [gripper_pos], dtype=np.float32)
+            
+            self.latest_joint_state = current_state
+            
+            # 履歴に追加
+            self.joint_history.append(current_state.copy())
+            
+            # 履歴の長さを制限
+            if len(self.joint_history) > self.max_history_length:
+                self.joint_history = self.joint_history[-self.max_history_length:]
+                
+        except Exception as e:
+            self.get_logger().error(f"Error in joint_state_callback: {e}")
     
     def get_observation_tensor(self) -> Dict[str, torch.Tensor]:
         """観測テンソルの準備"""
@@ -111,14 +117,19 @@ class CubeGraspInferenceNode(Node):
         
         # 履歴データの準備
         if len(self.joint_history) < self.max_history_length:
-            # 履歴が不足している場合は最初の状態でパディング
-            padding = [self.joint_history[0]] * (self.max_history_length - len(self.joint_history))
-            history = padding + self.joint_history
+            # 履歴が不足している場合は現在の状態でパディング
+            if len(self.joint_history) > 0:
+                padding = [self.joint_history[0]] * (self.max_history_length - len(self.joint_history))
+                history = padding + self.joint_history
+            else:
+                # 履歴が空の場合は現在の状態で埋める
+                history = [self.latest_joint_state.astype(np.float32)] * self.max_history_length
         else:
-            history = self.joint_history
+            history = self.joint_history[-self.max_history_length:]  # 最新の履歴のみ使用
         
-        # テンソルに変換
-        history_tensor = torch.tensor(history, dtype=torch.float32).unsqueeze(0)  # (1, seq_len, 5)
+        # numpy配列をfloat32に変換してからテンソルに変換
+        history_float32 = [h.astype(np.float32) for h in history]
+        history_tensor = torch.tensor(history_float32, dtype=torch.float32).unsqueeze(0)  # (1, seq_len, 5)
         
         return {
             'observation.state': history_tensor,
@@ -140,17 +151,17 @@ class CubeGraspInferenceNode(Node):
             try:
                 # モデルの順伝播
                 output = self.policy(obs['observation.state'].to(self.device), return_uncertainty=True)
-                action = output['action'].cpu().numpy().flatten()  # (5,)
+                action = output['action'].cpu().numpy().flatten().astype(np.float32)  # (5,)
                 
                 # 不確実性の取得（デバッグ用）
                 uncertainty = output.get('uncertainty', None)
                 if uncertainty is not None:
-                    uncertainty = uncertainty.cpu().numpy().flatten()
+                    uncertainty = uncertainty.cpu().numpy().flatten().astype(np.float32)
                 
                 # フェーズ情報の取得（デバッグ用）
                 phase_probs = output.get('phase_probs', None)
                 if phase_probs is not None:
-                    phase_probs = phase_probs.cpu().numpy()
+                    phase_probs = phase_probs.cpu().numpy().astype(np.float32)
                 
                 self.last_action = action
                 
@@ -162,10 +173,13 @@ class CubeGraspInferenceNode(Node):
                 self.log_action(action, uncertainty, phase_probs)
                 
             except Exception as e:
+                import traceback
                 self.get_logger().error(f"Error during inference: {e}")
+                self.get_logger().error(f"Traceback: {traceback.format_exc()}")
                 # エラー時は前回のアクションを使用
-                self.publish_arm_action(self.last_action[:4])
-                self.publish_gripper_action(self.last_action[4])
+                if self.last_action is not None:
+                    self.publish_arm_action(self.last_action[:4])
+                    self.publish_gripper_action(self.last_action[4])
     
     def publish_arm_action(self, arm_action: np.ndarray):
         """アームアクションの公開"""
@@ -191,18 +205,23 @@ class CubeGraspInferenceNode(Node):
     
     def log_action(self, action: np.ndarray, uncertainty: Optional[np.ndarray] = None, phase_probs: Optional[np.ndarray] = None):
         """アクション情報のログ出力"""
+        # numpy配列をfloatに変換して安全にフォーマット
+        action_float = action.astype(np.float32)
+        
         # 基本アクション情報
-        log_msg = f"Action: arm[{action[0]:.3f}, {action[1]:.3f}, {action[2]:.3f}, {action[3]:.3f}] gripper[{action[4]:.3f}]"
+        log_msg = f"Action: arm[{action_float[0]:.3f}, {action_float[1]:.3f}, {action_float[2]:.3f}, {action_float[3]:.3f}] gripper[{action_float[4]:.3f}]"
         
         # 不確実性情報
         if uncertainty is not None:
-            log_msg += f" | Uncertainty: {uncertainty.mean():.3f}"
+            uncertainty_float = uncertainty.astype(np.float32)
+            log_msg += f" | Uncertainty: {float(uncertainty_float.mean()):.3f}"
         
         # フェーズ情報
         if phase_probs is not None:
             phase_names = ['pre_grasp', 'grasp', 'post_grasp', 'other']
-            max_phase_idx = np.argmax(phase_probs[-1])  # 最新のタイムステップ
-            max_phase_prob = phase_probs[-1][max_phase_idx]
+            phase_probs_float = phase_probs.astype(np.float32)
+            max_phase_idx = np.argmax(phase_probs_float[-1])  # 最新のタイムステップ
+            max_phase_prob = float(phase_probs_float[-1][max_phase_idx])
             log_msg += f" | Phase: {phase_names[max_phase_idx]}({max_phase_prob:.2f})"
         
         print(log_msg)

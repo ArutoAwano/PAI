@@ -17,7 +17,7 @@ model_config:
   use_phase_detection: true
 
 # Training Configuration
-training_steps: 10 
+training_steps: 10
 auto_epochs: false # trueにすると自動で10エポックを計算
 batch_size: 8
 chunk_size: 16
