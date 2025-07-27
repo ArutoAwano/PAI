@@ -200,11 +200,18 @@ class CubeGraspPolicy(nn.Module):
         # アクション予測
         actions = self.action_head(final_features)
         
+        # 出力の形状を調整（シーケンス長が1の場合は削除）
+        if actions.shape[1] == 1:
+            actions = actions.squeeze(1)  # (batch_size, action_dim)
+        
         result = {"action": actions}
         
         # 不確実性推定
         if return_uncertainty:
             uncertainty = self.uncertainty_head(lstm_out)
+            # 出力の形状を調整（シーケンス長が1の場合は削除）
+            if uncertainty.shape[1] == 1:
+                uncertainty = uncertainty.squeeze(1)  # (batch_size, action_dim)
             result["uncertainty"] = uncertainty
         
         # フェーズ情報も返す

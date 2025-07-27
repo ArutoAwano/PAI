@@ -98,12 +98,15 @@ class CubeGraspTrainer:
     
     def create_dataloader(self) -> DataLoader:
         """データローダーの作成"""
+        # CPU環境ではpin_memoryを無効にする
+        pin_memory = self.device.type == 'cuda'
+        
         return DataLoader(
             self.dataset,
             batch_size=self.config.get('batch_size', 8),
             shuffle=True,
             num_workers=self.config.get('num_workers', 4),
-            pin_memory=True,
+            pin_memory=pin_memory,
             drop_last=True
         )
     
@@ -174,7 +177,7 @@ class CubeGraspTrainer:
         # 順伝播
         output = self.model(state, gripper_state, return_uncertainty=True)
         
-        # 損失計算
+        # 損失計算（モデル側で形状調整済み）
         losses = self.compute_loss(
             pred_actions=output['action'],
             target_actions=action,
@@ -218,6 +221,7 @@ class CubeGraspTrainer:
                 
                 output = self.model(state, gripper_state, return_uncertainty=True)
                 
+                # 損失計算（モデル側で形状調整済み）
                 losses = self.compute_loss(
                     pred_actions=output['action'],
                     target_actions=action,
@@ -256,15 +260,28 @@ class CubeGraspTrainer:
         
         # 検証用データローダー（同じデータセットを使用）
         val_dataset = self.dataset
+        # CPU環境ではpin_memoryを無効にする
+        pin_memory = self.device.type == 'cuda'
+        
         val_dataloader = DataLoader(
             val_dataset,
             batch_size=self.config.get('batch_size', 8),
             shuffle=False,
             num_workers=self.config.get('num_workers', 4),
-            pin_memory=True
+            pin_memory=pin_memory
         )
         
-        print(f"Starting training for {self.config.get('training_steps', 1000)} steps")
+        # エポック数の計算
+        dataset_size = len(self.dataset)
+        batch_size = self.config.get('batch_size', 8)
+        steps_per_epoch = dataset_size // batch_size
+        total_steps = self.config.get('training_steps', 100)
+        epochs = total_steps / steps_per_epoch
+        
+        print(f"Starting training for {total_steps} steps")
+        print(f"Dataset size: {dataset_size}")
+        print(f"Steps per epoch: {steps_per_epoch}")
+        print(f"Total epochs: {epochs:.1f}")
         print(f"Device: {self.device}")
         print(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
         
@@ -328,6 +345,14 @@ def main():
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
     
+    # デバッグ: 設定内容の確認
+    print("=== Configuration Debug ===")
+    print(f"Config file: {args.config}")
+    print(f"Training steps: {config.get('training_steps', 'NOT FOUND')}")
+    print(f"Batch size: {config.get('batch_size', 'NOT FOUND')}")
+    print(f"Device: {config.get('device', 'NOT FOUND')}")
+    print("==========================")
+    
     # コマンドライン引数で上書き
     if args.output_dir:
         config['output_directory'] = args.output_dir
@@ -348,6 +373,24 @@ def main():
         'use_grasp_attention': True,
         'use_phase_detection': True
     }
+    
+    # 10エポックになるようにステップ数を自動調整
+    if config.get('auto_epochs', False):
+        # データセットサイズを取得して10エポックを計算
+        dataset = LeRobotDataset(
+            repo_id=config['repo_id'],
+            root=config['dataset_root'],
+            delta_timestamps=config.get('delta_timestamps', {
+                'observation.environment_state': [0.0],
+                'observation.state': [0.0],
+                'action': [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
+            })
+        )
+        dataset_size = len(dataset)
+        batch_size = config.get('batch_size', 8)
+        steps_per_epoch = dataset_size // batch_size
+        config['training_steps'] = steps_per_epoch * 10  # 10エポック
+        print(f"Auto-calculated training steps for 10 epochs: {config['training_steps']}")
     
     # カリキュラム学習設定
     config['curriculum_config'] = {
