@@ -39,6 +39,7 @@ class CubeGraspInferenceNode(Node):
         self.latest_joint_state = None
         self.joint_history = []  # 時系列データ用
         self.max_history_length = 32  # 履歴の最大長
+        self._debug_output = False  # デバッグ出力フラグ
         
         # タイマー設定（20Hz）
         self.timer = self.create_timer(0.05, self.publish_action)
@@ -129,7 +130,9 @@ class CubeGraspInferenceNode(Node):
         
         # numpy配列をfloat32に変換してからテンソルに変換
         history_float32 = [h.astype(np.float32) for h in history]
-        history_tensor = torch.tensor(history_float32, dtype=torch.float32).unsqueeze(0)  # (1, seq_len, 5)
+        # リストを単一のnumpy配列に変換してからテンソルに変換（警告を回避）
+        history_array = np.array(history_float32, dtype=np.float32)
+        history_tensor = torch.from_numpy(history_array).unsqueeze(0)  # (1, seq_len, 5)
         
         return {
             'observation.state': history_tensor,
@@ -151,6 +154,12 @@ class CubeGraspInferenceNode(Node):
             try:
                 # モデルの順伝播
                 output = self.policy(obs['observation.state'].to(self.device), return_uncertainty=True)
+                
+                # デバッグ用：出力構造を確認
+                if hasattr(self, '_debug_output') and not self._debug_output:
+                    self.get_logger().info(f"Model output keys: {list(output.keys())}")
+                    self._debug_output = True
+                
                 action = output['action'].cpu().numpy().flatten().astype(np.float32)  # (5,)
                 
                 # 不確実性の取得（デバッグ用）
@@ -162,6 +171,8 @@ class CubeGraspInferenceNode(Node):
                 phase_probs = output.get('phase_probs', None)
                 if phase_probs is not None:
                     phase_probs = phase_probs.cpu().numpy().astype(np.float32)
+                    # デバッグ用：フェーズ確率の形状をログ出力
+                    self.get_logger().debug(f"Phase probs shape: {phase_probs.shape}")
                 
                 self.last_action = action
                 
@@ -218,11 +229,31 @@ class CubeGraspInferenceNode(Node):
         
         # フェーズ情報
         if phase_probs is not None:
-            phase_names = ['pre_grasp', 'grasp', 'post_grasp', 'other']
-            phase_probs_float = phase_probs.astype(np.float32)
-            max_phase_idx = np.argmax(phase_probs_float[-1])  # 最新のタイムステップ
-            max_phase_prob = float(phase_probs_float[-1][max_phase_idx])
-            log_msg += f" | Phase: {phase_names[max_phase_idx]}({max_phase_prob:.2f})"
+            try:
+                phase_names = ['pre_grasp', 'grasp', 'post_grasp', 'other']
+                phase_probs_float = phase_probs.astype(np.float32)
+                
+                # フェーズ確率の形状を確認して適切に処理
+                if phase_probs_float.ndim == 1:
+                    # 1次元の場合（単一のフェーズ確率）
+                    max_phase_idx = np.argmax(phase_probs_float)
+                    max_phase_prob = float(phase_probs_float[max_phase_idx])
+                elif phase_probs_float.ndim == 2:
+                    # 2次元の場合（時系列のフェーズ確率）
+                    max_phase_idx = np.argmax(phase_probs_float[-1])  # 最新のタイムステップ
+                    max_phase_prob = float(phase_probs_float[-1][max_phase_idx])
+                else:
+                    # その他の形状の場合は平均を取る
+                    max_phase_idx = np.argmax(phase_probs_float.mean(axis=0))
+                    max_phase_prob = float(phase_probs_float.mean(axis=0)[max_phase_idx])
+                
+                # インデックスが範囲内かチェック
+                if max_phase_idx < len(phase_names):
+                    log_msg += f" | Phase: {phase_names[max_phase_idx]}({max_phase_prob:.2f})"
+                else:
+                    log_msg += f" | Phase: unknown({max_phase_prob:.2f})"
+            except Exception as e:
+                log_msg += f" | Phase: error({str(e)[:20]})"
         
         print(log_msg)
 
