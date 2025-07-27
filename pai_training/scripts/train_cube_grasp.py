@@ -32,10 +32,16 @@ class CubeGraspTrainer:
         self.device = torch.device(config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
         
         # データセットの読み込み
+        delta_timestamps = config.get('delta_timestamps', {
+            'observation.environment_state': [0.0],
+            'observation.state': [0.0],
+            'action': [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
+        })
+        
         self.dataset = LeRobotDataset(
             repo_id=config['repo_id'],
             root=config['dataset_root'],
-            split='train'
+            delta_timestamps=delta_timestamps
         )
         
         # モデルの作成
@@ -123,25 +129,9 @@ class CubeGraspTrainer:
                                           target_phases.view(-1))
             losses['phase_loss'] = phase_loss
         
-        # カリキュラム学習の補助タスク損失
-        if hasattr(self.model, 'auxiliary_tasks'):
-            aux_losses = {}
-            for task_name, task_head in self.model.auxiliary_tasks.items():
-                if f'aux_{task_name}' in batch:
-                    aux_pred = batch[f'aux_{task_name}']
-                    aux_target = batch[f'target_{task_name}']
-                    
-                    if task_name == 'grasp_prediction':
-                        aux_loss = nn.BCELoss()(aux_pred, aux_target)
-                    else:
-                        aux_loss = nn.MSELoss()(aux_pred, aux_target)
-                    
-                    aux_losses[f'aux_{task_name}_loss'] = aux_loss
-            
-            # カリキュラム重みを適用
-            for loss_name, loss_value in aux_losses.items():
-                weight = self.model.curriculum_weights[list(aux_losses.keys()).index(loss_name)]
-                losses[loss_name] = weight * loss_value
+        # カリキュラム学習の補助タスク損失（現在の実装では使用しない）
+        # 必要に応じて実装を追加
+        pass
         
         return losses
     
@@ -164,8 +154,14 @@ class CubeGraspTrainer:
         state = batch['observation.state'].to(self.device)
         action = batch['action'].to(self.device)
         
+        # データの形状を確認・調整
+        if len(state.shape) == 3:  # (batch, seq, features)
+            # 時系列データの場合、最後のタイムステップを使用
+            state = state[:, -1, :]  # (batch, features)
+            action = action[:, -1, :] if len(action.shape) == 3 else action  # (batch, features)
+        
         # グリッパー状態の抽出
-        gripper_state = state[:, :, -1:].detach()
+        gripper_state = state[:, -1:].detach()  # (batch, 1)
         
         # 順伝播
         output = self.model(state, gripper_state, return_uncertainty=True)
@@ -204,7 +200,13 @@ class CubeGraspTrainer:
             for batch in val_dataloader:
                 state = batch['observation.state'].to(self.device)
                 action = batch['action'].to(self.device)
-                gripper_state = state[:, :, -1:].detach()
+                
+                # データの形状を確認・調整
+                if len(state.shape) == 3:  # (batch, seq, features)
+                    state = state[:, -1, :]  # (batch, features)
+                    action = action[:, -1, :] if len(action.shape) == 3 else action  # (batch, features)
+                
+                gripper_state = state[:, -1:].detach()  # (batch, 1)
                 
                 output = self.model(state, gripper_state, return_uncertainty=True)
                 
@@ -244,12 +246,8 @@ class CubeGraspTrainer:
         """学習の実行"""
         dataloader = self.create_dataloader()
         
-        # 検証用データローダー
-        val_dataset = LeRobotDataset(
-            repo_id=self.config['repo_id'],
-            root=self.config['dataset_root'],
-            split='val'
-        )
+        # 検証用データローダー（同じデータセットを使用）
+        val_dataset = self.dataset
         val_dataloader = DataLoader(
             val_dataset,
             batch_size=self.config.get('batch_size', 8),
@@ -262,12 +260,21 @@ class CubeGraspTrainer:
         print(f"Device: {self.device}")
         print(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
         
+        # データローダーのイテレータを作成
+        dataloader_iter = iter(dataloader)
+        
         for step in tqdm(range(self.config.get('training_steps', 1000))):
             # カリキュラム学習の更新
             self.update_curriculum(step)
             
             # 学習ステップ
-            batch = next(iter(dataloader))
+            try:
+                batch = next(dataloader_iter)
+            except StopIteration:
+                # データローダーが終了したら再作成
+                dataloader_iter = iter(dataloader)
+                batch = next(dataloader_iter)
+            
             train_losses = self.train_step(batch)
             
             # ログ出力

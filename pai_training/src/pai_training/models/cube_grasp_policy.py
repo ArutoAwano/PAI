@@ -151,10 +151,17 @@ class CubeGraspPolicy(nn.Module):
                 return_uncertainty: bool = False) -> Dict[str, torch.Tensor]:
         """
         Args:
-            state: (batch_size, seq_len, state_dim)
-            gripper_state: (batch_size, seq_len, 1) - グリッパー状態
+            state: (batch_size, state_dim) or (batch_size, seq_len, state_dim)
+            gripper_state: (batch_size, 1) or (batch_size, seq_len, 1) - グリッパー状態
             return_uncertainty: 不確実性を返すかどうか
         """
+        # データの形状を確認・調整
+        if len(state.shape) == 2:
+            # 単一ステップの場合、シーケンスとして扱う
+            state = state.unsqueeze(1)  # (batch_size, 1, state_dim)
+            if gripper_state is not None:
+                gripper_state = gripper_state.unsqueeze(1)  # (batch_size, 1, 1)
+        
         batch_size, seq_len, _ = state.shape
         
         # グリッパー状態の抽出（最後の次元）
