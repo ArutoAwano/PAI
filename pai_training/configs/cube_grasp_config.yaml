@@ -17,9 +17,9 @@ model_config:
   use_phase_detection: true
 
 # Training Configuration
-training_steps: 1000 # 学習時間を短縮
+training_steps: 3000 # 学習時間を短縮
 auto_epochs: false # trueにすると自動で10エポックを計算
-batch_size: 16 # バッチサイズを大きくして高速化
+batch_size: 128 # バッチサイズを大きくして高速化
 chunk_size: 16
 n_action_steps: 1
 learning_rate: 0.001 # 学習率を上げて高速化

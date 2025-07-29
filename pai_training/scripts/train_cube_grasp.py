@@ -202,13 +202,19 @@ class CubeGraspTrainer:
         return {k: v.item() for k, v in losses.items()}
     
     def validate(self, val_dataloader: DataLoader) -> Dict[str, float]:
-        """検証"""
+        """検証（高速化版）"""
         self.model.eval()
         total_losses = {}
         num_batches = 0
         
+        # 最大10バッチのみ検証（高速化）
+        max_val_batches = 10
+        
         with torch.no_grad():
-            for batch in val_dataloader:
+            for i, batch in enumerate(val_dataloader):
+                if i >= max_val_batches:  # 10バッチで打ち切り
+                    break
+                    
                 state = batch['observation.state'].to(self.device)
                 action = batch['action'].to(self.device)
                 
@@ -258,8 +264,12 @@ class CubeGraspTrainer:
         """学習の実行"""
         dataloader = self.create_dataloader()
         
-        # 検証用データローダー（同じデータセットを使用）
-        val_dataset = self.dataset
+        # 検証用データローダー（データセットの一部のみ使用）
+        # 高速化のため、データセットの10%のみを使用
+        val_size = len(self.dataset) // 10
+        val_indices = torch.randperm(len(self.dataset))[:val_size]
+        val_dataset = torch.utils.data.Subset(self.dataset, val_indices)
+        
         # CPU環境ではpin_memoryを無効にする
         pin_memory = self.device.type == 'cuda'
         
@@ -304,8 +314,8 @@ class CubeGraspTrainer:
             
             # ログ出力
             if step % self.log_freq == 0:
-                # 検証（頻度を減らして高速化）
-                if step % (self.log_freq * 2) == 0:  # 2倍の頻度で検証
+                # 検証（頻度を大幅に減らして高速化）
+                if step % (self.log_freq * 10) == 0:  # 10倍の頻度で検証（大幅削減）
                     val_losses = self.validate(val_dataloader)
                     metrics = {**train_losses, **{f'val_{k}': v for k, v in val_losses.items()}}
                 else:
