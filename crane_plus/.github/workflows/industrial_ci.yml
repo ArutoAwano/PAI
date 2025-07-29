@@ -1,0 +1,27 @@
+name: industrial_ci
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  schedule:
+    - cron: "0 2 * * 0" # Weekly on Sundays at 02:00
+
+jobs:
+  industrial_ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - { ROS_DISTRO: jazzy, ROS_REPO: main }
+          - { ROS_DISTRO: rolling, ROS_REPO: main, UPSTREAM_WORKSPACE: crane_plus-not-released.rolling.repos }
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: "ros-industrial/industrial_ci@master"
+        env: ${{ matrix.env }}

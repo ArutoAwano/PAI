@@ -1,0 +1,228 @@
+<?xml version="1.0"?>
+
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="crane_plus" params="parent *origin">
+
+    <joint name="${NAME_JOINT_BASE}" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child link="${NAME_LINK_BASE}"/>
+    </joint>
+
+    <link name="${NAME_LINK_BASE}">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/visual/body.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/collision/body.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="black"/>
+      </collision>
+
+      <inertial>
+        <mass value="6.65E-02"/>
+        <origin xyz="-1.31E-02 7.00E-06 2.12E-02" rpy="0 0 0"/>
+        <inertia ixx="1.66E-05" ixy="1.80E-09" ixz="-5.75E-07" iyy="2.36E-05" iyz="-3.23E-08" izz="1.77E-05"/>
+      </inertial>
+    </link>
+
+    <joint name="${NAME_JOINT_1}" type="revolute">
+      <origin xyz="0 0 0.0454" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit
+        effort="${JOINT_EFFORT_LIMIT}"
+        velocity="${JOINT_VELOCITY_LIMIT}"
+        lower="${JOINT_1_LOWER_LIMIT}"
+        upper="${JOINT_1_UPPER_LIMIT}"
+        />
+      <parent link="${NAME_LINK_BASE}"/>
+      <child link="${NAME_LINK_1}"/>
+      <dynamics damping="1.0e-6" friction="2.0e-1"/>
+    </joint>
+
+    <link name="${NAME_LINK_1}">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/visual/link1.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="white"/>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/collision/link1.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="white"/>
+      </collision>
+
+      <inertial>
+        <mass value="7.73E-03"/>
+        <origin xyz="2.00E-06 0.0 1.09E-02" rpy="0 0 0"/>
+        <inertia ixx="3.43E-06" ixy="0.0" ixz="1.66E-10" iyy="1.30E-06" iyz="0.0" izz="3.05E-06"/>
+      </inertial>
+    </link>
+
+    <joint name="${NAME_JOINT_2}" type="revolute">
+      <origin xyz="0 0 0.026" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit
+        effort="${JOINT_EFFORT_LIMIT}"
+        velocity="${JOINT_VELOCITY_LIMIT}"
+        lower="${JOINT_2_LOWER_LIMIT}"
+        upper="${JOINT_2_UPPER_LIMIT}"
+        />
+      <parent link="${NAME_LINK_1}"/>
+      <child link="${NAME_LINK_2}"/>
+      <dynamics damping="1.0e-6" friction="2.0e-1"/>
+    </joint>
+
+    <link name="${NAME_LINK_2}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${radians(90)} 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/visual/link2.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="${radians(90)} 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/collision/link2.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="black"/>
+      </collision>
+
+      <inertial>
+        <mass value="1.17E-01"/>
+        <origin xyz="7.99E-04 1.00E-06 4.15E-02" rpy="${radians(90)} 0 0"/>
+        <inertia ixx="1.25E-04" ixy="6.83E-08" ixz="9.50E-11" iyy="1.92E-05" iyz="0.0" izz="1.19E-04"/>
+      </inertial>
+    </link>
+
+    <joint name="${NAME_JOINT_3}" type="revolute">
+      <origin xyz="0 0 0.083" rpy="0 0 0"/>
+      <axis xyz="0 -1 0"/>
+      <limit
+        effort="${JOINT_EFFORT_LIMIT}"
+        velocity="${JOINT_VELOCITY_LIMIT}"
+        lower="${JOINT_3_LOWER_LIMIT}"
+        upper="${JOINT_3_UPPER_LIMIT}"
+        />
+      <parent link="${NAME_LINK_2}"/>
+      <child link="${NAME_LINK_3}"/>
+      <dynamics damping="1.0e-6" friction="2.0e-1"/>
+    </joint>
+
+    <link name="${NAME_LINK_3}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${radians(90)} 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/visual/link3.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="white"/>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="${radians(90)} 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/collision/link3.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="white"/>
+      </collision>
+
+      <inertial>
+        <mass value="7.23E-02"/>
+        <origin xyz="6.45E-04 -1.38E-04 7.01E-02" rpy="${radians(90)} 0 0"/>
+        <inertia ixx="5.41E-05" ixy="-2.28E-07" ixz="-2.67E-09" iyy="1.60E-05" iyz="-5.35E-07" izz="4.69E-05"/>
+      </inertial>
+    </link>
+
+    <joint name="${NAME_JOINT_4}" type="revolute">
+      <origin xyz="0 0 0.0935" rpy="0 0 0"/>
+      <axis xyz="0 -1 0"/>
+      <limit
+        effort="${JOINT_EFFORT_LIMIT}"
+        velocity="${JOINT_VELOCITY_LIMIT}"
+        lower="${JOINT_4_LOWER_LIMIT}"
+        upper="${JOINT_4_UPPER_LIMIT}"
+        />
+      <parent link="${NAME_LINK_3}"/>
+      <child link="${NAME_LINK_4}"/>
+      <dynamics damping="1.0e-6" friction="2.0e-1"/>
+    </joint>
+
+    <link name="${NAME_LINK_4}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${radians(90)} 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/visual/link4.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="${radians(90)} 0 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/collision/link4.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="black"/>
+      </collision>
+
+      <inertial>
+        <mass value="8.19E-02"/>
+        <origin xyz="6.45E-04 -5.70E-04 4.62E-02" rpy="${radians(90)} 0 0"/>
+        <inertia ixx="5.91E-05" ixy="-5.11E-08" ixz="3.49E-07" iyy="3.62E-05" iyz="1.37E-05" izz="3.98E-05"/>
+      </inertial>
+    </link>
+
+    <joint name="${NAME_JOINT_HAND}" type="revolute">
+      <origin xyz="0 -0.0145 0.045" rpy="0 0 0"/>
+      <axis xyz="-1 0 0"/>
+      <limit
+        effort="${JOINT_EFFORT_LIMIT}"
+        velocity="${JOINT_VELOCITY_LIMIT}"
+        lower="${JOINT_HAND_LOWER_LIMIT}"
+        upper="${JOINT_HAND_UPPER_LIMIT}"
+        />
+      <parent link="${NAME_LINK_4}"/>
+      <child link="${NAME_LINK_HAND}"/>
+      <dynamics damping="1.0e-6" friction="2.0e-1"/>
+    </joint>
+
+    <link name="${NAME_LINK_HAND}">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 ${radians(-90)} 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/visual/hand.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="white"/>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="0 ${radians(-90)} 0"/>
+        <geometry>
+          <mesh filename="package://crane_plus_description/meshes/collision/hand.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="white"/>
+      </collision>
+
+      <inertial>
+        <mass value="2.29E-02"/>
+        <origin xyz="0.0 -2.04E-02 2.77E-02" rpy="0 ${radians(-90)} 0"/>
+        <inertia ixx="5.76E-06" ixy="-4.66E-07" ixz="0.0" iyy="2.76E-05" iyz="0.0" izz="2.52E-05"/>
+      </inertial>
+    </link>
+
+  </xacro:macro>
+</robot>
