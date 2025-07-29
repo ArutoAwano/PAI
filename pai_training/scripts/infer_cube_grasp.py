@@ -41,6 +41,7 @@ class CubeGraspInferenceNode(Node):
         self.max_history_length = 32  # 履歴の最大長
         self._debug_output = False  # デバッグ出力フラグ
         self._phase_shape_logged = False  # フェーズ形状ログフラグ
+        self._action_published_logged = False  # アクション公開ログフラグ
         
         # タイマー設定（20Hz）
         self.timer = self.create_timer(0.05, self.publish_action)
@@ -208,6 +209,12 @@ class CubeGraspInferenceNode(Node):
                 pt_g.time_from_start.nanosec = int(0.1 * 1e9)
                 jt_g.points.append(pt_g)
                 self.gripper_pub.publish(jt_g)
+                
+                # デバッグ情報：実際に送信されたアクションを表示
+                if not hasattr(self, '_action_published_logged'):
+                    self.get_logger().info(f"Publishing arm action: {action[:4].tolist()}")
+                    self.get_logger().info(f"Publishing gripper action: {float(action[4])}")
+                    self._action_published_logged = True
                 
                 # デバッグ情報の出力
                 self.log_action(action, uncertainty, phase_probs)

@@ -103,9 +103,9 @@ class CubeGraspTrainer:
         
         return DataLoader(
             self.dataset,
-            batch_size=self.config.get('batch_size', 8),
+            batch_size=self.config.get('batch_size', 16),
             shuffle=True,
-            num_workers=self.config.get('num_workers', 4),
+            num_workers=self.config.get('num_workers', 2),
             pin_memory=pin_memory,
             drop_last=True
         )
@@ -265,15 +265,15 @@ class CubeGraspTrainer:
         
         val_dataloader = DataLoader(
             val_dataset,
-            batch_size=self.config.get('batch_size', 8),
+            batch_size=self.config.get('batch_size', 16),
             shuffle=False,
-            num_workers=self.config.get('num_workers', 4),
+            num_workers=self.config.get('num_workers', 2),
             pin_memory=pin_memory
         )
         
         # エポック数の計算
         dataset_size = len(self.dataset)
-        batch_size = self.config.get('batch_size', 8)
+        batch_size = self.config.get('batch_size', 16)
         steps_per_epoch = dataset_size // batch_size
         total_steps = self.config.get('training_steps', 100)
         epochs = total_steps / steps_per_epoch
@@ -304,11 +304,13 @@ class CubeGraspTrainer:
             
             # ログ出力
             if step % self.log_freq == 0:
-                # 検証
-                val_losses = self.validate(val_dataloader)
+                # 検証（頻度を減らして高速化）
+                if step % (self.log_freq * 2) == 0:  # 2倍の頻度で検証
+                    val_losses = self.validate(val_dataloader)
+                    metrics = {**train_losses, **{f'val_{k}': v for k, v in val_losses.items()}}
+                else:
+                    metrics = train_losses
                 
-                # メトリクスの記録
-                metrics = {**train_losses, **{f'val_{k}': v for k, v in val_losses.items()}}
                 metrics['learning_rate'] = self.scheduler.get_last_lr()[0]
                 metrics['step'] = step
                 
@@ -387,10 +389,10 @@ def main():
             })
         )
         dataset_size = len(dataset)
-        batch_size = config.get('batch_size', 8)
+        batch_size = config.get('batch_size', 16)
         steps_per_epoch = dataset_size // batch_size
-        config['training_steps'] = steps_per_epoch * 10  # 10エポック
-        print(f"Auto-calculated training steps for 10 epochs: {config['training_steps']}")
+        config['training_steps'] = steps_per_epoch * 2  # 2エポック（高速化）
+        print(f"Auto-calculated training steps for 2 epochs: {config['training_steps']}")
     
     # カリキュラム学習設定
     config['curriculum_config'] = {

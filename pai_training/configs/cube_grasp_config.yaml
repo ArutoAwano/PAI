@@ -17,12 +17,12 @@ model_config:
   use_phase_detection: true
 
 # Training Configuration
-training_steps: 10
+training_steps: 1000 # 学習時間を短縮
 auto_epochs: false # trueにすると自動で10エポックを計算
-batch_size: 8
+batch_size: 16 # バッチサイズを大きくして高速化
 chunk_size: 16
 n_action_steps: 1
-learning_rate: 0.0001
+learning_rate: 0.001 # 学習率を上げて高速化
 weight_decay: 0.00001
 min_lr: 0.000001
 max_grad_norm: 1.0
@@ -45,11 +45,11 @@ curriculum_config:
 
 # Hardware Configuration
 device: "cpu" # "cuda", "cpu", or "auto"
-num_workers: 4
+num_workers: 2 # ワーカー数を減らして高速化
 
 # Logging Configuration
-log_freq: 10
-save_freq: 100
+log_freq: 20 # ログ頻度を減らして高速化
+save_freq: 50 # 保存頻度を減らして高速化
 use_wandb: true
 wandb_project: "cube-grasp"
 experiment_name: "cube-grasp-enhanced"
