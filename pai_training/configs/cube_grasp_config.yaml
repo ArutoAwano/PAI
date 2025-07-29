@@ -17,12 +17,12 @@ model_config:
   use_phase_detection: true
 
 # Training Configuration
-training_steps: 3000 # 学習時間を短縮
-auto_epochs: false # trueにすると自動で10エポックを計算
-batch_size: 128 # バッチサイズを大きくして高速化
+training_steps: 3000
+auto_epochs: false
+batch_size: 512
 chunk_size: 16
 n_action_steps: 1
-learning_rate: 0.001 # 学習率を上げて高速化
+learning_rate: 0.001
 weight_decay: 0.00001
 min_lr: 0.000001
 max_grad_norm: 1.0
@@ -35,6 +35,13 @@ augmentation_config:
   joint_limit_buffer: 0.05
   enable_augmentation: true
   augmentation_factor: 3
+  # Static frame filtering configuration
+  joint_threshold: 0.001 # 関節の変化量閾値（ラジアン）
+  gripper_threshold: 0.001 # グリッパーの変化量閾値
+  # Grip frame amplification configuration
+  enable_grip_amplification: true # グリップフレーム増幅を有効にする
+  grip_amplification_factor: 50 # グリップフレームの増幅倍率
+  grip_window_size: 5 # グリップポイント前後のフレーム数
 
 # Curriculum Learning Configuration
 curriculum_config:

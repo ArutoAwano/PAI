@@ -33,6 +33,29 @@ class DataAugmentation:
         self.action_noise_std = config.get('action_noise_std', 0.005)
         self.joint_limit_buffer = config.get('joint_limit_buffer', 0.05)
         
+    def filter_static_frames(self, joint_data: np.ndarray, gripper_data: np.ndarray, 
+                           joint_threshold: float = 0.001, gripper_threshold: float = 0.001) -> np.ndarray:
+        """静止フレームを除外するフィルター"""
+        if len(joint_data) < 2:
+            return np.ones(len(joint_data), dtype=bool)
+        
+        # 関節の変化量を計算
+        joint_diff = np.abs(np.diff(joint_data, axis=0))
+        joint_movement = np.any(joint_diff > joint_threshold, axis=1)
+        
+        # グリッパーの変化量を計算
+        gripper_diff = np.abs(np.diff(gripper_data))
+        gripper_movement = gripper_diff > gripper_threshold
+        
+        # どちらかが動いているフレームを保持
+        movement_mask = np.logical_or(joint_movement, gripper_movement)
+        
+        # 最初と最後のフレームは常に保持
+        keep_mask = np.ones(len(joint_data), dtype=bool)
+        keep_mask[1:-1] = movement_mask
+        
+        return keep_mask
+        
     def add_gaussian_noise(self, data: np.ndarray, std: float = None) -> np.ndarray:
         """ガウシアンノイズを追加"""
         if std is None:
@@ -132,6 +155,67 @@ class DataAugmentation:
                                                               joint_data[post_range].shape)
         
         return joint_data, gripper_data
+    
+    def amplify_grip_frames(self, joint_data: np.ndarray, gripper_data: np.ndarray, 
+                           action_data: np.ndarray, times: np.ndarray, 
+                           amplification_factor: int = 50, window_size: int = 5) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """グリップフレームを増幅する"""
+        # グリッパーの状態変化を検出
+        gripper_diff = np.diff(gripper_data)
+        grip_points = np.where(np.abs(gripper_diff) > 0.01)[0]
+        
+        if len(grip_points) == 0:
+            return joint_data, gripper_data, action_data, times
+        
+        # 増幅されたデータを格納するリスト
+        amplified_joint = []
+        amplified_gripper = []
+        amplified_action = []
+        amplified_times = []
+        
+        current_idx = 0
+        for grip_point in grip_points:
+            # グリップポイント前の通常フレームを追加
+            start_idx = max(0, grip_point - window_size)
+            if start_idx > current_idx:
+                amplified_joint.extend(joint_data[current_idx:start_idx])
+                amplified_gripper.extend(gripper_data[current_idx:start_idx])
+                amplified_action.extend(action_data[current_idx:start_idx])
+                amplified_times.extend(times[current_idx:start_idx])
+            
+            # グリップポイント周辺のフレームを増幅
+            grip_start = max(0, grip_point - window_size)
+            grip_end = min(len(joint_data), grip_point + window_size + 1)
+            
+            for _ in range(amplification_factor):
+                # グリップフレーム周辺に小さなノイズを追加
+                grip_joint = joint_data[grip_start:grip_end].copy()
+                grip_gripper = gripper_data[grip_start:grip_end].copy()
+                grip_action = action_data[grip_start:grip_end].copy()
+                grip_times = times[grip_start:grip_end].copy()
+                
+                # グリップフレームに特別なノイズを追加
+                grip_noise_std = self.noise_std * 2.0  # グリップ時は大きなノイズ
+                grip_joint += np.random.normal(0, grip_noise_std, grip_joint.shape)
+                grip_gripper += np.random.normal(0, grip_noise_std, grip_gripper.shape)
+                grip_action += np.random.normal(0, self.action_noise_std * 2.0, grip_action.shape)
+                
+                amplified_joint.extend(grip_joint)
+                amplified_gripper.extend(grip_gripper)
+                amplified_action.extend(grip_action)
+                amplified_times.extend(grip_times)
+            
+            current_idx = grip_end
+        
+        # 残りのフレームを追加
+        if current_idx < len(joint_data):
+            amplified_joint.extend(joint_data[current_idx:])
+            amplified_gripper.extend(gripper_data[current_idx:])
+            amplified_action.extend(action_data[current_idx:])
+            amplified_times.extend(times[current_idx:])
+        
+        return (np.array(amplified_joint), np.array(amplified_gripper), 
+                np.array(amplified_action), np.array(amplified_times))
 
 class RosbagToLeRobotWithAugmentation:
     def __init__(self, bag_dir, output_dir, config_path, target_freq=None, augmentation_config=None):
@@ -147,7 +231,9 @@ class RosbagToLeRobotWithAugmentation:
                 'action_noise_std': 0.005,
                 'joint_limit_buffer': 0.05,
                 'enable_augmentation': True,
-                'augmentation_factor': 3  # 元データの3倍に拡張
+                'augmentation_factor': 3,
+                'joint_threshold': 0.001,
+                'gripper_threshold': 0.001
             }
         self.augmentation = DataAugmentation(augmentation_config)
         self.augmentation_config = augmentation_config
@@ -242,7 +328,34 @@ class RosbagToLeRobotWithAugmentation:
     def _apply_augmentation(self, j_pos_sampled, a_pos_sampled, g_pos_sampled, times):
         """データ拡張を適用"""
         if not self.augmentation_config.get('enable_augmentation', True):
-            return [(j_pos_sampled, a_pos_sampled, g_pos_sampled, times)]
+            # 静止フレーム除外のみ適用
+            keep_mask = self.augmentation.filter_static_frames(
+                j_pos_sampled, g_pos_sampled,
+                self.augmentation_config.get('joint_threshold', 0.001),
+                self.augmentation_config.get('gripper_threshold', 0.001)
+            )
+            filtered_j_pos = j_pos_sampled[keep_mask]
+            filtered_a_pos = a_pos_sampled[keep_mask]
+            filtered_g_pos = g_pos_sampled[keep_mask]
+            filtered_times = times[keep_mask]
+            
+            print(f"Static frame filtering: {len(j_pos_sampled)} -> {len(filtered_j_pos)} frames")
+            
+            # グリップフレーム増幅を適用
+            if self.augmentation_config.get('enable_grip_amplification', True):
+                amplification_factor = self.augmentation_config.get('grip_amplification_factor', 50)
+                window_size = self.augmentation_config.get('grip_window_size', 5)
+                
+                amplified_j_pos, amplified_g_pos, amplified_a_pos, amplified_times = \
+                    self.augmentation.amplify_grip_frames(
+                        filtered_j_pos, filtered_g_pos, filtered_a_pos, filtered_times,
+                        amplification_factor, window_size
+                    )
+                
+                print(f"Grip frame amplification: {len(filtered_j_pos)} -> {len(amplified_j_pos)} frames")
+                return [(amplified_j_pos, amplified_a_pos, amplified_g_pos, amplified_times)]
+            
+            return [(filtered_j_pos, filtered_a_pos, filtered_g_pos, filtered_times)]
         
         augmented_data = []
         augmentation_factor = self.augmentation_config.get('augmentation_factor', 3)
@@ -283,6 +396,28 @@ class RosbagToLeRobotWithAugmentation:
             
             # 5. アクションにノイズ追加
             aug_a_pos += np.random.normal(0, self.augmentation.action_noise_std, aug_a_pos.shape)
+            
+            # 6. 静止フレームを除外
+            keep_mask = self.augmentation.filter_static_frames(
+                aug_j_pos, aug_g_pos,
+                self.augmentation_config.get('joint_threshold', 0.001),
+                self.augmentation_config.get('gripper_threshold', 0.001)
+            )
+            aug_j_pos = aug_j_pos[keep_mask]
+            aug_a_pos = aug_a_pos[keep_mask]
+            aug_g_pos = aug_g_pos[keep_mask]
+            aug_times = aug_times[keep_mask]
+            
+            # 7. グリップフレーム増幅
+            if self.augmentation_config.get('enable_grip_amplification', True):
+                amplification_factor = self.augmentation_config.get('grip_amplification_factor', 50)
+                window_size = self.augmentation_config.get('grip_window_size', 5)
+                
+                aug_j_pos, aug_g_pos, aug_a_pos, aug_times = \
+                    self.augmentation.amplify_grip_frames(
+                        aug_j_pos, aug_g_pos, aug_a_pos, aug_times,
+                        amplification_factor, window_size
+                    )
             
             augmented_data.append((aug_j_pos, aug_a_pos, aug_g_pos, aug_times))
         
@@ -346,6 +481,13 @@ class RosbagToLeRobotWithAugmentation:
                     # Concatenate after sampling
                     a_pos_full = np.hstack([aug_a_pos, aug_g_pos.reshape(-1,1)])
                     
+                    # 静止フレームを除外
+                    # keep_mask = self.augmentation.filter_static_frames(aug_j_pos, aug_g_pos) # This line is now handled by _apply_augmentation
+                    # aug_j_pos = aug_j_pos[keep_mask]
+                    # aug_a_pos = aug_a_pos[keep_mask]
+                    # aug_g_pos = aug_g_pos[keep_mask]
+                    # aug_times = aug_times[keep_mask]
+                    
                     for i in range(max_frames):
                         idx_to_use = min(i, len(aug_j_pos) - 1)
                         self.dataset.add_frame({
@@ -394,7 +536,9 @@ def main():
         'action_noise_std': 0.005,
         'joint_limit_buffer': 0.05,
         'enable_augmentation': True,
-        'augmentation_factor': 3
+        'augmentation_factor': 3,
+        'joint_threshold': 0.001,
+        'gripper_threshold': 0.001
     }
 
     converter = RosbagToLeRobotWithAugmentation(bag_dir, output_dir, config, target_freq, augmentation_config)

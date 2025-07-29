@@ -39,18 +39,35 @@ class CubeGraspTrainer:
         else:
             self.device = torch.device(device_config)
         
-        # データセットの読み込み
+        # データセットの読み込み（学習用エピソードのみ）
         delta_timestamps = config.get('delta_timestamps', {
             'observation.environment_state': [0.0],
             'observation.state': [0.0],
             'action': [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
         })
         
-        self.dataset = LeRobotDataset(
+        # エピソード分割の準備
+        temp_dataset = LeRobotDataset(
             repo_id=config['repo_id'],
             root=config['dataset_root'],
             delta_timestamps=delta_timestamps
         )
+        
+        total_episodes = temp_dataset.num_episodes
+        val_episode_size = max(1, total_episodes // 10)
+        
+        # 学習用エピソード（最初の90%）
+        train_episode_indices = list(range(total_episodes - val_episode_size))
+        
+        self.dataset = LeRobotDataset(
+            repo_id=config['repo_id'],
+            root=config['dataset_root'],
+            episodes=train_episode_indices,
+            delta_timestamps=delta_timestamps
+        )
+        
+        print(f"Training episodes: {train_episode_indices}")
+        print(f"Training dataset size: {len(self.dataset)} samples")
         
         # モデルの作成
         self.model = create_cube_grasp_policy(config['model_config'])
@@ -272,12 +289,28 @@ class CubeGraspTrainer:
         """学習の実行"""
         dataloader = self.create_dataloader()
         
-        # 検証用データローダー（データセットの一部のみ使用）
-        # 高速化のため、データセットの10%のみを使用
-        val_size = max(1, len(self.dataset) // 10)  # 最小1を保証
-        val_indices = torch.randperm(len(self.dataset))[:val_size].tolist()  # リストに変換
-        val_dataset = torch.utils.data.Subset(self.dataset, val_indices)
+        # 検証用データローダー（エピソード分割方式）
+        # 高速化のため、データセットの10%のエピソードを使用
+        total_episodes = self.dataset.num_episodes
+        val_episode_size = max(1, total_episodes // 10)  # 最小1エピソードを保証
         
+        # 最後の10%のエピソードを検証用に使用
+        val_episode_indices = list(range(total_episodes - val_episode_size, total_episodes))
+        
+        # 検証用データセットを作成
+        val_dataset = LeRobotDataset(
+            repo_id=self.config['repo_id'],
+            root=self.config['dataset_root'],
+            episodes=val_episode_indices,
+            delta_timestamps=self.config.get('delta_timestamps', {
+                'observation.environment_state': [0.0],
+                'observation.state': [0.0],
+                'action': [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
+            })
+        )
+        
+        print(f"Total episodes: {total_episodes}")
+        print(f"Validation episodes: {val_episode_indices}")
         print(f"Validation dataset size: {len(val_dataset)} samples")
         
         # CPU環境ではpin_memoryを無効にする
