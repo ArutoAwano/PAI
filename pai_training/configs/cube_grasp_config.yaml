@@ -1,8 +1,8 @@
 # Cube Grasping Task Configuration
 
 # Dataset Configuration
-dataset_root: "/home/ubuntu/dataset/lerobot_dataset/crane_plus_pekori"
-repo_id: "crane_plus_pekori"
+dataset_root: "/home/ubuntu/dataset/lerobot_dataset/cube_grasp_enhanced"
+repo_id: "cube_grasp_enhanced"
 config_path: "configs/crane_features.py"
 
 # Model Configuration

@@ -51,8 +51,8 @@ python scripts/rosbag2lerobot_with_augmentation.py
 **設定例** (`configs/conversion_config.yaml`):
 
 ```yaml
-bag_dir: "/path/to/your/rosbags"
-output_dir: "/path/to/output/dataset"
+bag_dir: "/home/ubuntu/dataset/rosbags/pekori"
+output_dir: "/home/ubuntu/dataset/lerobot_dataset/cube_grasp_enhanced"
 config: "configs/crane_features.py"
 target_freq: 20
 ```
@@ -67,7 +67,7 @@ pixi run train-cube-grasp
 pixi run train-cube-grasp -- --config configs/cube_grasp_config.yaml
 
 # カスタム出力ディレクトリ
-pixi run train-cube-grasp -- --config configs/cube_grasp_config.yaml --output_dir /path/to/output
+pixi run train-cube-grasp -- --config configs/cube_grasp_config.yaml --output_dir /home/ubuntu/checkpoints/train/cube_grasp_enhanced
 
 # GPU指定
 pixi run train-cube-grasp -- --config configs/cube_grasp_config.yaml --device cuda
@@ -79,16 +79,16 @@ python scripts/train_cube_grasp.py --config configs/cube_grasp_config.yaml
 
 ```bash
 # pixiを使用して推論
-pixi run infer-cube-grasp -- --model-path /path/to/checkpoint.pt
+pixi run infer-cube-grasp -- --model-path /home/ubuntu/checkpoints/train/cube_grasp_enhanced/latest_checkpoint.pt
 
 # カスタム設定ファイル付き
-pixi run infer-cube-grasp -- --model-path /path/to/checkpoint.pt --config-path configs/cube_grasp_config.yaml
+pixi run infer-cube-grasp -- --model-path /home/ubuntu/checkpoints/train/cube_grasp_enhanced/latest_checkpoint.pt --config-path configs/cube_grasp_config.yaml
 
 # 履歴長の調整
-pixi run infer-cube-grasp -- --model-path /path/to/checkpoint.pt --history-length 64
+pixi run infer-cube-grasp -- --model-path /home/ubuntu/checkpoints/train/cube_grasp_enhanced/latest_checkpoint.pt --history-length 64
 
 # または直接実行
-python scripts/infer_cube_grasp.py --model-path /path/to/checkpoint.pt
+python scripts/infer_cube_grasp.py --model-path /home/ubuntu/checkpoints/train/cube_grasp_enhanced/latest_checkpoint.pt
 ````
 
 ## ⚙️ 設定パラメータ

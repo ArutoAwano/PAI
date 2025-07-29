@@ -39,13 +39,31 @@ class DataAugmentation:
         if len(joint_data) < 2:
             return np.ones(len(joint_data), dtype=bool)
         
+        # デバッグ情報
+        print(f"Debug - joint_data shape: {joint_data.shape}, gripper_data shape: {gripper_data.shape}")
+        
         # 関節の変化量を計算
         joint_diff = np.abs(np.diff(joint_data, axis=0))
         joint_movement = np.any(joint_diff > joint_threshold, axis=1)
         
-        # グリッパーの変化量を計算
-        gripper_diff = np.abs(np.diff(gripper_data))
-        gripper_movement = gripper_diff > gripper_threshold
+        # グリッパーの変化量を計算（1次元配列の場合を考慮）
+        try:
+            if gripper_data.ndim == 1:
+                gripper_diff = np.abs(np.diff(gripper_data))
+            else:
+                gripper_diff = np.abs(np.diff(gripper_data, axis=0))
+                if gripper_diff.ndim > 1:
+                    gripper_diff = np.any(gripper_diff, axis=1)
+            
+            gripper_movement = gripper_diff > gripper_threshold
+        except Exception as e:
+            print(f"Warning: Error processing gripper data: {e}")
+            print(f"gripper_data shape: {gripper_data.shape}, dtype: {gripper_data.dtype}")
+            # エラーの場合は関節の動きのみを使用
+            gripper_movement = np.zeros_like(joint_movement, dtype=bool)
+        
+        # デバッグ情報
+        print(f"Debug - joint_movement shape: {joint_movement.shape}, gripper_movement shape: {gripper_movement.shape}")
         
         # 配列の長さを確認して調整
         min_length = min(len(joint_movement), len(gripper_movement))
@@ -335,20 +353,33 @@ class RosbagToLeRobotWithAugmentation:
 
     def _sample_and_hold(self, times, values, target_times):
         values = np.asarray(values)
+        original_shape = values.shape
+        
+        # 1次元配列の場合の特別な処理
         if len(values.shape) == 1:
             values = values.reshape(-1, 1)
             new_values = np.zeros((len(target_times), values.shape[1]))
+            should_flatten = True
         elif len(values.shape) >= 3:
             new_values = np.zeros((len(target_times), *values.shape[1:]), dtype=values.dtype)
+            should_flatten = False
         else:
             new_values = np.zeros((len(target_times), values.shape[1]))
+            should_flatten = False
+        
         for i, target_time in enumerate(target_times):
             idx = np.searchsorted(times, target_time, side='right') - 1
             if idx < 0:
                 idx = 0
             new_values[i] = values[idx]
-        if len(values.shape) == 1:
+        
+        # 元の形状に戻す
+        if should_flatten:
             new_values = new_values.flatten()
+        
+        # デバッグ情報
+        print(f"Debug - _sample_and_hold: original shape {original_shape} -> new shape {new_values.shape}")
+        
         return new_values
 
     def _apply_augmentation(self, j_pos_sampled, a_pos_sampled, g_pos_sampled, times):
@@ -498,6 +529,10 @@ class RosbagToLeRobotWithAugmentation:
                 j_pos_sampled = self._sample_and_hold(j_times, j_pos, target_times)
                 a_pos_sampled = self._sample_and_hold(a_times, a_pos, target_times)
                 g_pos_sampled = self._sample_and_hold(g_times, g_pos, target_times)
+                
+                # デバッグ情報
+                print(f"Debug - After sampling: j_pos_sampled shape: {j_pos_sampled.shape}, g_pos_sampled shape: {g_pos_sampled.shape}")
+                print(f"Debug - g_pos_sampled sample values: {g_pos_sampled[:5] if len(g_pos_sampled) > 5 else g_pos_sampled}")
                 
                 # データ拡張を適用
                 augmented_data = self._apply_augmentation(j_pos_sampled, a_pos_sampled, g_pos_sampled, target_times)
