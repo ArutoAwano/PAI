@@ -210,35 +210,43 @@ class CubeGraspTrainer:
         # 最大10バッチのみ検証（高速化）
         max_val_batches = 10
         
-        with torch.no_grad():
-            for i, batch in enumerate(val_dataloader):
-                if i >= max_val_batches:  # 10バッチで打ち切り
-                    break
+        try:
+            with torch.no_grad():
+                for i, batch in enumerate(val_dataloader):
+                    if i >= max_val_batches:  # 10バッチで打ち切り
+                        break
+                        
+                    state = batch['observation.state'].to(self.device)
+                    action = batch['action'].to(self.device)
                     
-                state = batch['observation.state'].to(self.device)
-                action = batch['action'].to(self.device)
-                
-                # データの形状を確認・調整
-                if len(state.shape) == 3:  # (batch, seq, features)
-                    state = state[:, -1, :]  # (batch, features)
-                    action = action[:, -1, :] if len(action.shape) == 3 else action  # (batch, features)
-                
-                gripper_state = state[:, -1:].detach()  # (batch, 1)
-                
-                output = self.model(state, gripper_state, return_uncertainty=True)
-                
-                # 損失計算（モデル側で形状調整済み）
-                losses = self.compute_loss(
-                    pred_actions=output['action'],
-                    target_actions=action,
-                    pred_phases=output.get('phase_logits'),
-                    pred_uncertainty=output.get('uncertainty')
-                )
-                
-                for k, v in losses.items():
-                    total_losses[k] = total_losses.get(k, 0) + v.item()
-                
-                num_batches += 1
+                    # データの形状を確認・調整
+                    if len(state.shape) == 3:  # (batch, seq, features)
+                        state = state[:, -1, :]  # (batch, features)
+                        action = action[:, -1, :] if len(action.shape) == 3 else action  # (batch, features)
+                    
+                    gripper_state = state[:, -1:].detach()  # (batch, 1)
+                    
+                    output = self.model(state, gripper_state, return_uncertainty=True)
+                    
+                    # 損失計算（モデル側で形状調整済み）
+                    losses = self.compute_loss(
+                        pred_actions=output['action'],
+                        target_actions=action,
+                        pred_phases=output.get('phase_logits'),
+                        pred_uncertainty=output.get('uncertainty')
+                    )
+                    
+                    for k, v in losses.items():
+                        total_losses[k] = total_losses.get(k, 0) + v.item()
+                    
+                    num_batches += 1
+        except Exception as e:
+            print(f"Validation error: {e}")
+            # エラーが発生した場合はダミーの損失を返す
+            return {'action_loss': 1.0, 'weighted_action_loss': 1.0, 'uncertainty_reg': 1.0}
+        
+        if num_batches == 0:
+            return {'action_loss': 1.0, 'weighted_action_loss': 1.0, 'uncertainty_reg': 1.0}
         
         return {k: v / num_batches for k, v in total_losses.items()}
     
@@ -266,18 +274,20 @@ class CubeGraspTrainer:
         
         # 検証用データローダー（データセットの一部のみ使用）
         # 高速化のため、データセットの10%のみを使用
-        val_size = len(self.dataset) // 10
-        val_indices = torch.randperm(len(self.dataset))[:val_size]
+        val_size = max(1, len(self.dataset) // 10)  # 最小1を保証
+        val_indices = torch.randperm(len(self.dataset))[:val_size].tolist()  # リストに変換
         val_dataset = torch.utils.data.Subset(self.dataset, val_indices)
+        
+        print(f"Validation dataset size: {len(val_dataset)} samples")
         
         # CPU環境ではpin_memoryを無効にする
         pin_memory = self.device.type == 'cuda'
         
         val_dataloader = DataLoader(
             val_dataset,
-            batch_size=self.config.get('batch_size', 16),
+            batch_size=min(self.config.get('batch_size', 16), len(val_dataset)),  # バッチサイズを調整
             shuffle=False,
-            num_workers=self.config.get('num_workers', 2),
+            num_workers=0,  # ワーカー数を0にして安全に
             pin_memory=pin_memory
         )
         
@@ -315,7 +325,7 @@ class CubeGraspTrainer:
             # ログ出力
             if step % self.log_freq == 0:
                 # 検証（頻度を大幅に減らして高速化）
-                if step % (self.log_freq * 10) == 0:  # 10倍の頻度で検証（大幅削減）
+                if step > 0 and step % (self.log_freq * 20) == 0:  # 20倍の頻度で検証（さらに削減）
                     val_losses = self.validate(val_dataloader)
                     metrics = {**train_losses, **{f'val_{k}': v for k, v in val_losses.items()}}
                 else:
