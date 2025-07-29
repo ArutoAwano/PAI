@@ -47,12 +47,18 @@ class DataAugmentation:
         gripper_diff = np.abs(np.diff(gripper_data))
         gripper_movement = gripper_diff > gripper_threshold
         
+        # 配列の長さを確認して調整
+        min_length = min(len(joint_movement), len(gripper_movement))
+        joint_movement = joint_movement[:min_length]
+        gripper_movement = gripper_movement[:min_length]
+        
         # どちらかが動いているフレームを保持
         movement_mask = np.logical_or(joint_movement, gripper_movement)
         
         # 最初と最後のフレームは常に保持
         keep_mask = np.ones(len(joint_data), dtype=bool)
-        keep_mask[1:-1] = movement_mask
+        if len(movement_mask) > 0:
+            keep_mask[1:1+len(movement_mask)] = movement_mask
         
         return keep_mask
         
@@ -187,6 +193,10 @@ class DataAugmentation:
             grip_start = max(0, grip_point - window_size)
             grip_end = min(len(joint_data), grip_point + window_size + 1)
             
+            # 配列の長さを確認
+            if grip_start >= grip_end:
+                continue
+                
             for _ in range(amplification_factor):
                 # グリップフレーム周辺に小さなノイズを追加
                 grip_joint = joint_data[grip_start:grip_end].copy()
