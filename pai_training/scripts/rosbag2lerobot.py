@@ -137,30 +137,22 @@ class RosbagToLeRobot:
         self.task_name = task_name
 
         # Create dataset
-        while True:
-            try:
-                self.dataset = LeRobotDataset.create(
-                    repo_id=repo_id,
-                    fps=target_freq or 20,
-                    root=self.output_dir,
-                    robot_type=robot_type,
-                    features=features,
-                    use_videos=True,
-                )
-                break
-            except FileExistsError:
-                print(f"[Warning] Directory {self.output_dir} already exists.")
-                ans = input("Overwrite? (y: overwrite, n: specify new directory name): ").strip().lower()
-                if ans == 'y':
-                    import shutil
-                    shutil.rmtree(self.output_dir)
-                    print(f"{self.output_dir} deleted. Recreating...")
-                    continue
-                else:
-                    new_dir = input("Enter new directory name: ").strip()
-                    self.output_dir = self.output_dir.parent / new_dir
-                    print(f"New output directory: {self.output_dir}")
-                    continue
+        try:
+            self.dataset = LeRobotDataset.create(
+                repo_id=repo_id,
+                fps=target_freq or 20,
+                root=self.output_dir,
+                robot_type=robot_type,
+                features=features,
+                use_videos=True,
+            )
+        except FileExistsError:
+            print(f"[Info] Directory {self.output_dir} already exists. Loading existing dataset...")
+            # 既存のデータセットを読み込み、新しいエピソードを追加
+            self.dataset = LeRobotDataset(
+                repo_id=repo_id,
+                root=self.output_dir,
+            )
 
         if "teleop" not in self.dataset.meta.task_to_task_index:
             self.dataset.meta.add_task("teleop")
