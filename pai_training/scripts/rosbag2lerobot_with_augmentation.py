@@ -165,7 +165,7 @@ class DataAugmentation:
     def amplify_grip_frames(self, joint_data: np.ndarray, gripper_data: np.ndarray, 
                            action_data: np.ndarray, times: np.ndarray, 
                            amplification_factor: int = 50, window_size: int = 5) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """グリップフレームを増幅する"""
+        """グリップフレームを増幅する（ランダム性を抑えて元データに近づける）"""
         # グリッパーの状態変化を検出
         gripper_diff = np.diff(gripper_data)
         grip_points = np.where(np.abs(gripper_diff) > 0.01)[0]
@@ -197,18 +197,39 @@ class DataAugmentation:
             if grip_start >= grip_end:
                 continue
                 
-            for _ in range(amplification_factor):
-                # グリップフレーム周辺に小さなノイズを追加
-                grip_joint = joint_data[grip_start:grip_end].copy()
-                grip_gripper = gripper_data[grip_start:grip_end].copy()
-                grip_action = action_data[grip_start:grip_end].copy()
-                grip_times = times[grip_start:grip_end].copy()
+            # 元のグリップフレームデータを取得
+            original_grip_joint = joint_data[grip_start:grip_end]
+            original_grip_gripper = gripper_data[grip_start:grip_end]
+            original_grip_action = action_data[grip_start:grip_end]
+            original_grip_times = times[grip_start:grip_end]
+            
+            for i in range(amplification_factor):
+                # 元データをコピー（ノイズを最小限に）
+                grip_joint = original_grip_joint.copy()
+                grip_gripper = original_grip_gripper.copy()
+                grip_action = original_grip_action.copy()
+                grip_times = original_grip_times.copy()
                 
-                # グリップフレームに特別なノイズを追加
-                grip_noise_std = self.noise_std * 2.0  # グリップ時は大きなノイズ
-                grip_joint += np.random.normal(0, grip_noise_std, grip_joint.shape)
-                grip_gripper += np.random.normal(0, grip_noise_std, grip_gripper.shape)
-                grip_action += np.random.normal(0, self.action_noise_std * 2.0, grip_action.shape)
+                # 非常に小さなノイズのみ追加（元データを保持）
+                # ノイズの標準偏差を大幅に削減
+                grip_noise_std = self.noise_std * 0.1  # 元の1/10に削減
+                action_noise_std = self.action_noise_std * 0.1  # 元の1/10に削減
+                
+                # グリップポイントに近いフレームほどノイズを小さくする
+                for j in range(len(grip_joint)):
+                    # グリップポイントからの距離に基づいてノイズを調整
+                    distance_from_grip = abs(j - (grip_point - grip_start))
+                    distance_factor = max(0.1, 1.0 - distance_from_grip / window_size)
+                    
+                    # 距離に応じてノイズを調整
+                    adjusted_joint_noise = grip_noise_std * distance_factor * 0.5
+                    adjusted_gripper_noise = grip_noise_std * distance_factor * 0.3
+                    adjusted_action_noise = action_noise_std * distance_factor * 0.5
+                    
+                    # 最小限のノイズを追加
+                    grip_joint[j] += np.random.normal(0, adjusted_joint_noise, grip_joint[j].shape)
+                    grip_gripper[j] += np.random.normal(0, adjusted_gripper_noise)
+                    grip_action[j] += np.random.normal(0, adjusted_action_noise, grip_action[j].shape)
                 
                 amplified_joint.extend(grip_joint)
                 amplified_gripper.extend(grip_gripper)
@@ -236,14 +257,17 @@ class RosbagToLeRobotWithAugmentation:
         # データ拡張の設定
         if augmentation_config is None:
             augmentation_config = {
-                'noise_std': 0.01,
-                'time_warp_factor': 0.1,
-                'action_noise_std': 0.005,
+                'noise_std': 0.005,  # ノイズを削減
+                'time_warp_factor': 0.05,  # 時間歪曲も削減
+                'action_noise_std': 0.002,  # アクションノイズも削減
                 'joint_limit_buffer': 0.05,
                 'enable_augmentation': True,
                 'augmentation_factor': 3,
                 'joint_threshold': 0.001,
-                'gripper_threshold': 0.001
+                'gripper_threshold': 0.001,
+                'enable_grip_amplification': True,
+                'grip_amplification_factor': 50,
+                'grip_window_size': 5
             }
         self.augmentation = DataAugmentation(augmentation_config)
         self.augmentation_config = augmentation_config
@@ -533,14 +557,17 @@ def main():
     
     # データ拡張の設定
     augmentation_config = {
-        'noise_std': 0.01,
-        'time_warp_factor': 0.1,
-        'action_noise_std': 0.005,
+        'noise_std': 0.005,  # ノイズを削減
+        'time_warp_factor': 0.05,  # 時間歪曲も削減
+        'action_noise_std': 0.002,  # アクションノイズも削減
         'joint_limit_buffer': 0.05,
         'enable_augmentation': True,
         'augmentation_factor': 3,
         'joint_threshold': 0.001,
-        'gripper_threshold': 0.001
+        'gripper_threshold': 0.001,
+        'enable_grip_amplification': True,
+        'grip_amplification_factor': 50,
+        'grip_window_size': 5
     }
 
     converter = RosbagToLeRobotWithAugmentation(bag_dir, output_dir, config, target_freq, augmentation_config)
